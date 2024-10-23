@@ -29,7 +29,7 @@ func TestVerifyAttributeCert(t *testing.T) {
 		"testdata/Intel_pc2.cer",
 		"testdata/Intel_pc3.cer",
 	}
-	data, err := os.ReadFile("testdata/IntelSigningKey_20April2017.cer")
+	data, err := os.ReadFile("testdata/Intel_nuc_pc.cer")
 	if err != nil {
 		t.Fatalf("failed to read Intel intermediate certificate: %v", err)
 	}
@@ -90,4 +90,71 @@ func TestParseAttributeCerts(t *testing.T) {
 			t.Fatalf("%s fails to match test data", filename)
 		}
 	}
+}
+
+func TestParseAndRebuildCertificates(t *testing.T) {
+	files, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Fatalf("Failed to read test directory: %v", err)
+	}
+
+	for _, file := range files {
+		if strings.Contains(file.Name(), "Signing") {
+			continue
+		}
+		if strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+
+		filename := "testdata/" + file.Name()
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Errorf("Failed to read certificate file %s: %v", filename, err)
+			continue
+		}
+
+		success := ParseAttributeCertificateAndRebuild(data)
+		if !success {
+			t.Errorf("Failed to parse and rebuild certificate %s", filename)
+		} else {
+			t.Logf("Successfully parsed and rebuilt certificate %s", filename)
+		}
+	}
+}
+
+func TestParseAndSignCertificates(t *testing.T) {
+	files, err := os.ReadDir("testdata")
+	if err != nil {
+		t.Fatalf("Failed to read test directory: %v", err)
+	}
+
+	for _, file := range files {
+		if strings.Contains(file.Name(), "Signing") {
+			continue
+		}
+		if strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+
+		filename := "testdata/" + file.Name()
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Errorf("Failed to read certificate file %s: %v", filename, err)
+			continue
+		}
+
+		success := ParseAttributeCertificateResignAndRebuild(data)
+		if !success {
+			t.Errorf("Failed to parse and rebuild certificate %s", filename)
+		} else {
+			t.Logf("Successfully parsed and rebuilt certificate %s", filename)
+		}
+	}
+}
+
+func TestParseEKCert(t *testing.T) {
+
+	success := ExtractHolderFromEKCertificate()
+	print(success)
+
 }
