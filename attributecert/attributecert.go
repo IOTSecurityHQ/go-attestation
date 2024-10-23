@@ -9,11 +9,16 @@ package attributecert
 import (
 	"bytes"
 	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"time"
 
@@ -286,6 +291,170 @@ func ParseAttributeCertificate(asn1Data []byte) (*AttributeCertificate, error) {
 	}
 
 	return parseAttributeCertificate(&cert)
+}
+
+// proof of concept 1
+// ParseAttributeCertificate parses a single attribute certificate from the
+// given ASN.1 DER data.
+func ParseAttributeCertificateAndRebuild(asn1Data []byte) bool {
+	var cert attributeCertificate
+
+	rest, err := asn1.Unmarshal(asn1Data, &cert)
+	if err != nil {
+		fmt.Println("Failed to parse certificate:", err)
+		return false
+	} else if len(rest) != 0 {
+		fmt.Println("Trailing data after certificate")
+		return false
+	}
+
+	// The cert is shallow parsed, we need to rebuild it back to actual cert.
+
+	// Marshal the cert object back into ASN.1 DER format
+	rebuiltCertBytes, err := asn1.Marshal(cert)
+	if err != nil {
+		fmt.Println("Failed to marshal certificate:", err)
+		return false
+	}
+
+	// Optionally, write the re-encoded certificate to a file
+	err = ioutil.WriteFile("rebuilt_certificate.der", rebuiltCertBytes, 0644)
+	if err != nil {
+		fmt.Println("Failed to write certificate to file:", err)
+		return false
+	}
+
+	fmt.Println("Successfully rebuilt the certificate and wrote to 'rebuilt_certificate.der'")
+	return true
+}
+
+// Proof of concept 2
+func ParseAttributeCertificateResignAndRebuild(asn1Data []byte) bool {
+	var cert attributeCertificate
+
+	// Step 1: Parse the certificate
+	rest, err := asn1.Unmarshal(asn1Data, &cert)
+	if err != nil {
+		fmt.Println("Failed to parse certificate:", err)
+		return false
+	} else if len(rest) != 0 {
+		fmt.Println("Trailing data after certificate")
+		return false
+	}
+
+	// Step 2: Extract the TBS (To Be Signed) part
+	tbsBytes, err := asn1.Marshal(cert.TBSAttributeCertificate)
+	if err != nil {
+		fmt.Println("Failed to marshal TBS:", err)
+		return false
+	}
+
+	// Step 3: Generate or load a private key
+	// For testing, we'll generate a new key. In practice, load your actual private key.
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		fmt.Println("Failed to generate private key:", err)
+		return false
+	}
+
+	// Step 4: Compute the hash of the TBS part
+	hash := sha256.Sum256(tbsBytes)
+
+	// Step 5: Sign the hash
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privKey, crypto.SHA256, hash[:])
+	if err != nil {
+		fmt.Println("Failed to sign TBS:", err)
+		return false
+	}
+
+	// Step 7: Update the SignatureValue with the new signature
+	cert.SignatureValue = asn1.BitString{
+		Bytes:     signature,
+		BitLength: len(signature) * 8,
+	}
+
+	// Step 8: Marshal the cert object back into ASN.1 DER format
+	rebuiltCertBytes, err := asn1.Marshal(cert)
+	if err != nil {
+		fmt.Println("Failed to marshal certificate:", err)
+		return false
+	}
+
+	// Step 9: Write the re-encoded certificate to a file
+	err = ioutil.WriteFile("resigned_certificate.der", rebuiltCertBytes, 0644)
+	if err != nil {
+		fmt.Println("Failed to write certificate to file:", err)
+		return false
+	}
+
+	fmt.Println("Successfully rebuilt and signed the certificate and wrote to 'resigned_certificate.der'")
+	return true
+}
+
+var ekCertificatePEM = `-----BEGIN CERTIFICATE-----
+MIIFMTCCBBmgAwIBAgITAbAB/kC/lndHUacun13lMz1rYjANBgkqhkiG9w0BAQsF
+ADCBuTELMAkGA1UEBhMCVVMxEzARBgNVBAgTCkNhbGlmb3JuaWExFjAUBgNVBAcT
+DU1vdW50YWluIFZpZXcxEzARBgNVBAoTCkdvb2dsZSBMTEMxDjAMBgNVBAsTBUNs
+b3VkMVgwVgYDVQQDDE90cG1fZWtfdjFfY2xvdWRfaG9zdC1zaWduZXItMC0yMDIx
+LTEwLTEyVDA0OjIyOjExLTA3OjAwIEs6MSwgMzpuYnZhR1pGTGN1YzowOjE4MCAX
+DTIyMDkxMTEzMTEyOFoYDzIwNTIwOTAzMTMxNjI4WjAAMIIBIjANBgkqhkiG9w0B
+AQEFAAOCAQ8AMIIBCgKCAQEAucqjyB0bqfjIpNKltMSeV5iUlbY95YRyi/E9EIWJ
+sxLfqKewH5G+7o5hnxLZBKKPFm7pi6vrNzVg8d+3EvxvZlX+I1+WQuNBFOjxHSde
+dPXCCk/NcyN3pEMFL5sbcZ+KPa3CXLky5+dGXpuLoOZ7DCeWaImyG3JTfcNbhdHR
+31/3O3TVHobvt9gfu7kS25WIiQKA+aRKNI6B1Zg77zRs+iTq4gsK+BvZf9hw5SBO
+4fDu1bdjw4cY7Ip5/5EoFlg4vlFhhZQlIeUwELvzPNrcMPqzxP52UF8vzpkNwuwt
+7ZrTqAxmpA9vYnBuXzVtmApiZDOZRj55cjftq9+kcdeDKQIDAQABo4IB5jCCAeIw
+DAYDVR0TAQH/BAIwADAfBgNVHSMEGDAWgBRnCMR3Ef3Vh4TTLB1rTZeDYIQlgDBW
+BggrBgEFBQcBAQRKMEgwRgYIKwYBBQUHMAKGOmh0dHBzOi8vcGtpLmdvb2cvY2xv
+dWRfaW50ZWdyaXR5L3RwbV9la19pbnRlcm1lZGlhdGVfMy5jcnQwSwYDVR0fBEQw
+QjBAoD6gPIY6aHR0cHM6Ly9wa2kuZ29vZy9jbG91ZF9pbnRlZ3JpdHkvdHBtX2Vr
+X2ludGVybWVkaWF0ZV8zLmNybDAOBgNVHQ8BAf8EBAMCBSAwEAYDVR0lBAkwBwYF
+Z4EFCAEwIgYDVR0JBBswGTAXBgVngQUCEDEOMAwMAzIuMAIBAAICAI4wUQYDVR0R
+AQH/BEcwRaRDMEExFjAUBgVngQUCAQwLaWQ6NDc0RjRGNDcxDzANBgVngQUCAgwE
+dlRQTTEWMBQGBWeBBQIDDAtpZDoyMDE2MDUxMTBzBgorBgEEAdZ5AgEVBGUwYwwN
+dXMtY2VudHJhbDEtYQIGAPltg2V0DBNtaW5lcmFsLW1pbnV0aWEtODIwAggPbrkq
+vbBhSgwJcGFjY29yLXZtoCAwHqADAgEAoQMBAf+iAwEB/6MDAQEApAMBAQClAwEB
+ADANBgkqhkiG9w0BAQsFAAOCAQEAGJjNy+Ru7xs5TyZNl3WgfQYqwr2HKRQuxrq+
+5Xc6RpwGDDpAj6PAmj6c3oYoZ2LK2KhaalnBXtQ+0W1m6j+cXrYlVTWATICPUpSq
+YUSlKCpqlE9JQDUGwWToQOYKLB3gLi1Yh1NXvX2TUYvB6idbF28oQvqwcMNw7eqq
+fVc3cUiiJHIzzlVaxZdYPZEP3ScMcpDA1VhBzjbtWGAOncIVVFXkrihd9mQmVrPg
+ENjg4P+v6x6cZxEYzOtVHLLRifyMzCJzZcitbs5ZFxqgxF3UXQwdmN4qftg1gbNu
+KoXwjPYwI/c8+h3kJXzVKTHDd48OTjknMhvUIGGyBrWiitoQNw==
+-----END CERTIFICATE-----`
+
+// prooof of concept , parse a ek cert and write to attributeCertificate
+// type. This type can bve directly converted to DER
+// this proove we can create a structure and populate it.
+// we also prove that we can go back and parse the RDN sturcture.
+func ExtractHolderFromEKCertificate() bool {
+	// Decode the PEM data
+	block, _ := pem.Decode([]byte(ekCertificatePEM))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return false
+	}
+
+	// Parse the certificate
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+
+	// Write serial number and issuer to attriubtecertificate type
+
+	rdnBytes, err := asn1.Marshal(cert.Issuer.ToRDNSequence())
+
+	print(rdnBytes)
+
+	// Create a new holder struct
+	var test_holder holder
+	asn1.Unmarshal(rdnBytes, &test_holder.BaseCertificateID.Issuer)
+
+	// Extract the serial number and issuer name
+	var issuer pkix.RDNSequence
+	asn1.Unmarshal(rdnBytes, &issuer)
+
+	// Return the holder struct
+	return true
 }
 
 type PlatformDataSequence []PlatformDataSET
