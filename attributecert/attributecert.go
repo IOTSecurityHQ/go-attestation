@@ -443,17 +443,34 @@ func ExtractHolderFromEKCertificate() bool {
 
 	rdnBytes, err := asn1.Marshal(cert.Issuer.ToRDNSequence())
 
-	print(rdnBytes)
-
-	// Create a new holder struct
-	var test_holder holder
-	asn1.Unmarshal(rdnBytes, &test_holder.BaseCertificateID.Issuer)
-
-	// Extract the serial number and issuer name
-	var issuer pkix.RDNSequence
-	asn1.Unmarshal(rdnBytes, &issuer)
-
-	// Return the holder struct
+	attrCert := attributeCertificate{
+		TBSAttributeCertificate: tbsAttributeCertificate{
+			Version: 2, // For example, set version to 2
+			Holder: holder{
+				BaseCertificateID: issuerSerial{
+					Issuer: asn1.RawValue{
+						FullBytes: rdnBytes,
+					},
+					Serial: new(big.Int).SetInt64(123456789), // Example serial number
+				},
+			},
+			Issuer: attCertIssuer{}, // Populate as needed
+			SignatureAlgorithm: pkix.AlgorithmIdentifier{
+				Algorithm: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}, // Example OID for SHA-256 with RSA encryption
+			},
+			SerialNumber: new(big.Int).SetInt64(987654321), // Example serial number
+		},
+		SignatureAlgorithm: pkix.AlgorithmIdentifier{
+			Algorithm: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}, // Example OID for SHA-256 with RSA encryption
+		},
+		SignatureValue: asn1.BitString{Bytes: []byte{0x01, 0x02}, BitLength: 16},
+	}
+	tbsData, err := asn1.Marshal(attrCert.TBSAttributeCertificate)
+	attrCert.TBSAttributeCertificate.Raw = tbsData
+	certData, err := asn1.Marshal(attrCert)
+	print(certData)
+	var newcertTest attributeCertificate
+	asn1.Unmarshal(certData, &newcertTest)
 	return true
 }
 
